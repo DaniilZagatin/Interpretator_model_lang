@@ -43,7 +43,7 @@ class Ident {
     type_of_lex type;
     bool assign;
     int value;
-    bool bool_value;
+    double real_value;
 
 public:
     Ident() {
@@ -118,7 +118,6 @@ class Lex {
 
 public:
     Lex(type_of_lex t = LEX_NULL, int v = 0) : t_lex(t), v_lex(v), s_lex(""), real_lex(0) {} // Конструктор общий
-    //Lex(type_of_lex t, int v) : t_lex(t), v_lex(v), s_lex(""), real_lex(0) {} // Конструктор int
     Lex(type_of_lex t, string strr): t_lex(t), v_lex(0), s_lex(strr), real_lex(0) {} // Конструктор для string лексем
     Lex(type_of_lex t, double r): t_lex(t), v_lex(0), s_lex(""), real_lex((r)) {} // Конструктор для real лексем
 
@@ -141,7 +140,7 @@ public:
     friend ostream &operator<<(ostream &s, Lex l);
 };
 
-int search(string buf, const char **list);
+int look(string buf, const char **list);
 
 class Scanner {
     static FILE *fp;
@@ -150,6 +149,7 @@ class Scanner {
     class State {
     public:
         virtual State *operator()(char c) = 0;
+        virtual ~State() = default;
     };
 
     class H : public State {
@@ -220,12 +220,12 @@ class Scanner {
 
 public:
     static string buf;
+    static string buf_err;
     static char c;
     static int d, j, k;
     static double r;
     static bool end_flag;
     static int balance;
-    bool st_start = false;
     static const char *TW[], *TD[];
     static list<Lex> Lexems;
 
@@ -239,13 +239,12 @@ public:
 
 vector<Ident> TID; //таблица идентификаторов анализируемой программы
 int Scanner::balance = 0;
-//bool Scanner::lex_flag = true;
 //таблица служебных слов модельного языка
 const char *
         Scanner::TW[] = {
             "",     // z
             "and",
-            "bool",
+            "real",
             "do",
             "else",
             "if",
@@ -254,7 +253,6 @@ const char *
             "not",
             "or",
             "program",
-
             "read",
             "string",
             "true",
@@ -272,12 +270,10 @@ const char *
 const char *
         Scanner::TD[] = {
             "\"", "{", "}", ";", ",", ":", "!=", "=", "(", ")",
-            //                 0     1    2    3    4    5    6    7     8    9    10
             "==", "<", ">", "+", "-", "*", "/", "<=", ">=", "%", NULL
         };
-//                 11    12   13  14   15    16   17   18    19    20   21
 
-int search(const string buf, const char **list) {
+int look(const string buf, const char **list) {
     int i = 0;
     while (list[i]) {
         if (buf == list[i])
@@ -312,6 +308,7 @@ list<Lex> Scanner::Lexems;
 FILE* Scanner::fp;
 char Scanner::c;
 bool Scanner::end_flag = false;
+string Scanner::buf_err;
 // ---------------------------------------------
 
 Scanner::Scanner(const char *program) {
@@ -337,7 +334,7 @@ Scanner::State *Scanner::IDENT::operator()(char c) {
         return new IDENT;
     } else {
         ungetc(c, fp);
-        if ((j = search(buf, TW))) {
+        if ((j = look(buf, TW))) {
             Lexems.push_back(Lex((type_of_lex) j, j));
             return new OK;
         } else {
@@ -358,7 +355,7 @@ Scanner::State *Scanner::H::operator()(char c) {
     } else if (c == '}') {
         balance--;
         if (balance < 0) {
-            cout << "Непонятная закрывающая скобка.\n";
+            buf_err = "Непонятная закрывающая скобка.\n";
             return new ERR;
         }
         Lexems.push_back(Lex(LEX_END, '}'));
@@ -382,11 +379,13 @@ Scanner::State *Scanner::H::operator()(char c) {
     } else if (c == '"') {
         return new STR;
     } else {
-        cout << buf;
         buf.push_back(c);
-        if ((j = search(buf, TD))) {
+        if ((j = look(buf, TD))) {
             Lexems.push_back(Lex((type_of_lex) (j + (int) LEX_QUOTE), j));
             return new OK;
+        } else {
+            buf_err = "Недопустимый символ\n";
+            return new ERR;
         }
     }
 }
@@ -408,7 +407,6 @@ Scanner::State *Scanner::NUMB::operator()(char c) {
 Scanner::State *Scanner::R_NUMB::operator()(char c) {
     if (isdigit(c)) {
         r = r + ((double)(c - '0'))/(10*k);
-        cout << r << '\n';
         k++;
         return new R_NUMB;
     }
@@ -422,12 +420,11 @@ Scanner::State *Scanner::SLASH::operator()(char c) {
     if (c == '*') {
         buf.pop_back();
         return new COM;
-    } else {
-        ungetc(c, fp);
-        j = search(buf, TD);
-        Lexems.push_back(Lex(LEX_SLASH, j));
-        return new OK;
     }
+    ungetc(c, fp);
+    j = look(buf, TD);
+    Lexems.push_back(Lex(LEX_SLASH, j));
+    return new OK;
 }
 
 Scanner::State *Scanner::COM::operator()(char c) {
@@ -448,7 +445,7 @@ Scanner::State *Scanner::ALE::operator()(char c) {
     } else {
         ungetc(c, fp);
     }
-    j = search(buf, TD);
+    j = look(buf, TD);
     Lexems.push_back(Lex((type_of_lex) (j + (int) LEX_QUOTE), j));
     return new OK;
 }
@@ -456,11 +453,11 @@ Scanner::State *Scanner::ALE::operator()(char c) {
 Scanner::State *Scanner::NEQ::operator()(char c) {
     if (c == '=') {
         buf.push_back(c);
-        j = search(buf, TD);
+        j = look(buf, TD);
         Lexems.push_back(Lex(LEX_NEQ, j));
         return new OK;
     } else {
-        cout << "После '!' должно идти '='";
+        buf_err = "После '!' должно идти '='\n";
         return new ERR;
     }
 }
@@ -490,9 +487,8 @@ void Scanner::get_lex() {
             break;
         }
     }
-    cout << buf << '\n';
     if (dynamic_cast<ERR *> (temp)) {
-        cout<< "Error" <<endl;
+        throw buf_err;
     }
     delete temp;
 }
@@ -550,5 +546,5 @@ int main() {
         cout << str << endl;;
     }
 }
-//
+
 
