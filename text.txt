@@ -1,1 +1,13 @@
+program {
+    int x = 1;
+    real y = 1.11;
+    string s = "abc";
+    string s2 = "";
 
+    int main() {
+        while (x >>===== 0) { /* gashhgahjgjgahjahjghjahjghahj */
+        y += 1;
+        }
+    }
+
+}
